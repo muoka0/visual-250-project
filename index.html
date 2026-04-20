@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClothingID — Vision Scanner</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f13;
+    --surface: #1a1a24;
+    --border: #2d2d3d;
+    --accent: #7c6dff;
+    --accent2: #ff6b9d;
+    --text: #e8e8f0;
+    --muted: #7878a0;
+    --green: #4ade80;
+    --flash: rgba(255,255,255,0.85);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
+  header span { font-size: .75rem; color: var(--muted); padding: 3px 8px; background: var(--surface); border-radius: 20px; }
+
+  /* Camera permission overlay */
+  #camOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,16,.92);
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 100;
+  }
+  #camOverlay svg { opacity: .7; }
+  #camOverlay h2 { font-size: 1.2rem; font-weight: 700; }
+  #camOverlay p  { font-size: .85rem; color: var(--muted); text-align: center; max-width: 300px; line-height: 1.6; }
+  #allowBtn {
+    padding: 12px 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .2s;
+  }
+  #allowBtn:hover { opacity: .85; }
+  #camError { color: #ff6b6b; font-size: .8rem; display: none; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    width: 100%;
+    max-width: 960px;
+    padding: 24px 20px 40px;
+  }
+
+  @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+
+  /* Camera panel */
+  .cam-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .video-wrap {
+    position: relative;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    aspect-ratio: 4/3;
+  }
+
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #flash {
+    position: absolute;
+    inset: 0;
+    background: var(--flash);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .05s;
+  }
+
+  #noCamera {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: .9rem;
+  }
+  #noCamera svg { opacity: .4; }
+
+  .btn-row { display: flex; gap: 10px; }
+
+  button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+
+  #scanBtn {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+  }
+
+  canvas { display: none; }
+
+  /* Results panel */
+  .results-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .results-panel h2 {
+    font-size: .85rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #resultBox {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: .85rem;
+  }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Result cards */
+  .thumb-row {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  #thumb {
+    width: 90px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .item-info h3 { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+  .item-info .price { font-size: .8rem; color: var(--green); font-weight: 600; }
+
+  .style-desc {
+    font-size: .82rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: .72rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(124,109,255,.15);
+    color: var(--accent);
+    border: 1px solid rgba(124,109,255,.25);
+  }
+
+  .brands { font-size: .8rem; color: var(--muted); }
+  .brands b { color: var(--text); }
+
+  .search-links { display: flex; flex-direction: column; gap: 6px; }
+  .search-links h4 { font-size: .75rem; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+
+  .shop-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 13px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: .82rem;
+    transition: background .15s, border-color .15s;
+  }
+  .shop-link:hover { background: rgba(124,109,255,.12); border-color: var(--accent); }
+  .shop-link svg { flex-shrink: 0; }
+  .shop-link span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shop-num {
+    width: 20px; height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    font-size: .7rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .error-msg {
+    color: #ff6b6b;
+    font-size: .85rem;
+    background: rgba(255,107,107,.08);
+    border: 1px solid rgba(255,107,107,.2);
+    border-radius: 8px;
+    padding: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+    <circle cx="12" cy="12" r="3"/><path d="M20.188 10.934c.2.617.312 1.228.312 1.066s-.112.45-.312 1.066c-.588 1.8-1.9 3.4-3.688 4.5-1.788 1.1-3.912 1.5-6 1.5s-4.212-.4-6-1.5c-1.788-1.1-3.1-2.7-3.688-4.5C.312 12.45.2 11.838.2 12s.112-.45.312-1.066C1.1 9.134 2.412 7.534 4.2 6.434 5.988 5.334 8.112 4.934 10.2 4.934s4.212.4 6 1.5c1.788 1.1 3.1 2.7 3.688 4.5h.3Z"/>
+  </svg>
+  <h1>ClothingID</h1>
+  <span>Vision Scanner</span>
+</header>
+
+<!-- Camera permission overlay — shown until getUserMedia resolves -->
+<div id="camOverlay">
+  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+    <circle cx="12" cy="13" r="4"/>
+  </svg>
+  <h2>Camera Access Needed</h2>
+  <p>ClothingID uses your camera to capture clothing items and identify them with AI.</p>
+  <button id="allowBtn">Allow Camera</button>
+  <span id="camError"></span>
+</div>
+
+<main>
+  <div class="cam-panel">
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="flash"></div>
+      <div id="noCamera">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        Camera not enabled
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="scanBtn" disabled>Scan Item</button>
+    </div>
+
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="results-panel">
+    <h2>Analysis</h2>
+    <div id="resultBox">
+      <div class="placeholder" id="placeholder">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".3">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6M3 15h6"/>
+        </svg>
+        Point camera at clothing and tap Scan
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_KEY   = 'YOUR_ANTHROPIC_API_KEY_HERE';
+
+const video     = document.getElementById('video');
+const canvas    = document.getElementById('canvas');
+const flash     = document.getElementById('flash');
+const noCamera  = document.getElementById('noCamera');
+const scanBtn   = document.getElementById('scanBtn');
+const resultBox = document.getElementById('resultBox');
+const overlay   = document.getElementById('camOverlay');
+const allowBtn  = document.getElementById('allowBtn');
+const camError  = document.getElementById('camError');
+
+let stream = null;
+
+// ── Camera ────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    noCamera.style.display = 'none';
+    overlay.style.display  = 'none';
+    scanBtn.disabled = false;
+  } catch (e) {
+    camError.style.display = 'block';
+    camError.textContent   = e.name === 'NotAllowedError'
+      ? 'Permission denied — check browser settings and try again.'
+      : 'Camera unavailable: ' + e.message;
+  }
+}
+
+// Try automatically; if the browser blocks autoplay-style calls,
+// the overlay button provides the required user gesture.
+startCamera();
+allowBtn.addEventListener('click', startCamera);
+
+// ── Capture & analyse ─────────────────────────────────────
+scanBtn.addEventListener('click', async () => {
+  if (!stream) return;
+
+  // Flash effect
+  flash.style.opacity = '1';
+  setTimeout(() => { flash.style.opacity = '0'; }, 120);
+
+  // Grab frame
+  const ctx = canvas.getContext('2d');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataURL  = canvas.toDataURL('image/jpeg', 0.85);
+  const b64data  = dataURL.split(',')[1];
+  const thumbSrc = dataURL;
+
+  // Show spinner
+  scanBtn.disabled = true;
+  resultBox.innerHTML = '<div class="placeholder"><div class="spinner"></div>Analysing…</div>';
+
+  try {
+    const raw = await callClaude(API_KEY, b64data);
+    renderResult(raw, thumbSrc);
+  } catch (e) {
+    resultBox.innerHTML = `<div class="error-msg">⚠ ${e.message}</div>`;
+  } finally {
+    scanBtn.disabled = false;
+  }
+});
+
+// ── Claude vision call ────────────────────────────────────
+async function callClaude(apiKey, b64data) {
+  const prompt = `Analyze the clothing item(s) visible in this image. Return ONLY a JSON object — no markdown, no commentary — with exactly these fields:
+{
+  "item_name": "specific clothing item name (e.g. 'slim-fit chino trousers')",
+  "style_description": "2-3 sentences describing the style, cut, color, and occasion fit",
+  "tags": ["tag1","tag2","tag3","tag4","tag5"],
+  "brand_guesses": ["most likely brand","second guess"],
+  "price_range": "$XX–$XX USD estimated retail",
+  "search_queries": [
+    "google shopping query 1",
+    "google shopping query 2",
+    "google shopping query 3"
+  ]
+}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 700,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64data } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${res.status}`);
+  }
+
+  const data = await res.json();
+  const text = data.content[0].text.trim();
+  const jsonStr = text.startsWith('{') ? text : text.match(/\{[\s\S]*\}/)?.[0];
+  if (!jsonStr) throw new Error('Model returned unexpected format.');
+  return JSON.parse(jsonStr);
+}
+
+// ── Render results ─────────────────────────────────────────
+function renderResult(r, thumbSrc) {
+  const shopLinks = (r.search_queries || []).map((q, i) => {
+    const url = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+    return `
+      <a class="shop-link" href="${url}" target="_blank" rel="noopener">
+        <span class="shop-num">${i+1}</span>
+        <span>${escHtml(q)}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>`;
+  }).join('');
+
+  const tagHTML = (r.tags || []).map(t => `<span class="tag">${escHtml(t)}</span>`).join('');
+  const brands  = (r.brand_guesses || []).join(', ');
+
+  resultBox.innerHTML = `
+    <div class="thumb-row">
+      <img id="thumb" src="${thumbSrc}" alt="captured item"/>
+      <div class="item-info">
+        <h3>${escHtml(r.item_name || 'Unknown item')}</h3>
+        <div class="price">${escHtml(r.price_range || '')}</div>
+      </div>
+    </div>
+    <div class="style-desc">${escHtml(r.style_description || '')}</div>
+    <div class="tags">${tagHTML}</div>
+    ${brands ? `<div class="brands"><b>Likely brands:</b> ${escHtml(brands)}</div>` : ''}
+    <div class="search-links">
+      <h4>Shop on Google</h4>
+      ${shopLinks}
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
