@@ -1,4 +1,4 @@
-# ClothingID — EE250 Vision System (SSE edition)
+# ClothingID — EE250 Vision System (SSE)
 
 Three-node IoT pipeline: Pi camera → Flask server → browser/terminal display.
 No MQTT broker needed. No ESP32 required.
