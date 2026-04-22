@@ -14,7 +14,7 @@ Endpoints:
 Install deps:
   pip install flask anthropic "serpapi[google_search_results]"
 """
-
+from trend_scorer import update_trend_score
 import base64, json, os, queue, re, threading, time, logging
 from typing import Optional
 import anthropic
@@ -132,6 +132,14 @@ def analyse_image(b64: str, media_type: str = "image/jpeg") -> dict:
             log.warning("SerpApi error for '%s': %s", query, e)
 
     result["shopping_results"] = shopping
+    trend = update_trend_score(
+    item_type=result.get("item_name", "unknown"),
+    confidence="high",
+    products=shopping,
+    )
+    result["trend_label"] = trend["trend_label"]
+    result["trend_score"] = trend["trend_score"]
+    result["item_count"]  = trend["item_count"]
     result["timestamp"] = time.strftime("%H:%M:%S")
     return result
 
@@ -205,6 +213,12 @@ def trigger_check():
 def health():
     return jsonify({"status": "ok", "server_ip": SERVER_IP,
                     "sse_clients": len(_clients)})
+  
+@app.route("/reset", methods=["POST"])
+def reset_trends():
+    from trend_scorer import reset
+    reset()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
