@@ -133,9 +133,9 @@ def analyse_image(b64: str, media_type: str = "image/jpeg") -> dict:
 
     result["shopping_results"] = shopping
     trend = update_trend_score(
-    item_type=result.get("item_name", "unknown"),
-    confidence="high",
-    products=shopping,
+      item_type=result.get("item_name", "unknown"),
+      confidence="high",
+      products=shopping,
     )
     result["trend_label"] = trend["trend_label"]
     result["trend_score"] = trend["trend_score"]
